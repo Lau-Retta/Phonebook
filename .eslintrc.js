@@ -20,10 +20,10 @@ module.exports = {
 	'parserOptions': {
 	  'ecmaVersion': 'latest'
 	},
-	'extends': 'eslint:recommended',
 	plugins: [
-	  '@stylistic/js'
-	],
+        '@stylistic/js'
+    ],
+	'extends': 'eslint:recommended',
 	'rules': {
 		'@stylistic/js/indent': [
 			'error',
