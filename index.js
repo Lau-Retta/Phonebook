@@ -1,13 +1,38 @@
+require('dotenv').config()
 const express = require('express')
 const app = express()
-const cors = require('cors')
+
+const Person = require('./models/person');
+
+
+//---------------Manejo de errores--------------
+const unknownEndpoint = (request, response) => {
+  response.status(404).send({ error: 'unknown endpoint' })
+}
+
+
+const errorHandler = (error, request, response, next) => {
+  console.error(error.message)
+
+  if (error.name === 'CastError') {
+    return response.status(400).send({ error: 'malformatted id' })
+  } else if (error.name === 'ValidationError') {
+    return response.status(400).json({ error: error.message })
+  }
+
+  next(error)
+}
+
+
+
+
 
 var morgan = require('morgan')
+const cors = require('cors')
 
 app.use(express.json());
 app.use(morgan('tiny'));
 app.use(cors());
-app.use(express.static('dist'));
 
 morgan.token('postData', function(req, res) {
   if (req.method === 'POST') {
@@ -19,28 +44,6 @@ morgan.token('postData', function(req, res) {
 app.use(morgan(':method :url :status :response-time ms - :res[content-length] :postData'));
 
 
-let persons =[
-    { 
-      "id": 1,
-      "name": "Arto Hellas", 
-      "number": "040-123456"
-    },
-    { 
-      "id": 2,
-      "name": "Ada Lovelace", 
-      "number": "39-44-5323523"
-    },
-    { 
-      "id": 3,
-      "name": "Dan Abramov", 
-      "number": "12-43-234345"
-    },
-    { 
-      "id": 4,
-      "name": "Mary Poppendieck", 
-      "number": "39-23-6423122"
-    }
-]
 
   app.get('/info',(request, response) => {
     const currentDate = new Date();
@@ -56,43 +59,43 @@ let persons =[
   })
   
   app.get('/api/persons', (request, response) => {
-    response.json(persons)
+    Person.find({}).then(persons =>{
+      response.json(persons);
+    })
+ 
   })
   
-  app.get('/api/persons/:id', (request, response) => {
-    const id = Number(request.params.id)
-    const person = persons.find(per => per.id === id)
-    if (person) {
-      response.json(person)
-    } else {
-      response.status(404).end()
-    }
-  })
-
-  app.delete('/api/persons/:id', (request, response) => {
-    const id = Number(request.params.id)
-    const person = persons.find(per => per.id === id)
-    if (person) {
-      persons = persons.filter(per => per.id !== id)  
-      response.status(204).end()
-    } else {
-      response.status(404).end()
-    }
-  })
-
-
-
-  const generateId = () => {
-    const randomNumber = Math.random() * 100000;
-    const randomId = Math.floor(randomNumber);
+  app.get('/api/persons/:id', (request, response, next) => {
+    Person.findById(request.params.id).then(
+      person=>{
+        if (person) {
+          response.json(person)
+        } else {
+          response.status(404).end()
+        }
+      })
+      .catch(error=>{next(error)});
    
-    return randomId;
-  }
-  
-  app.post('/api/persons', (request, response) => {
+  })
+
+  app.delete('/api/persons/:id', (request, response,next) => {
+    Person.findByIdAndDelete(request.params.id)
+    .then(result => {
+      response.status(204).end()
+    })
+    .catch(error => next(error))
+  })
+
+
+
+  app.post('/api/persons', (request, response, next) => {
 
     const body = request.body
 
+    const person = new Person({
+      name: body.name,
+      number: body.number 
+    })
     
     if (!body.name) {
       return response.status(400).json({ 
@@ -104,29 +107,48 @@ let persons =[
       })
     }
     
-    if(persons.find(per => per.name === body.name) ){
-      return response.status(400).json({ 
-        error: 'name must be unique' 
-      })
-    }else if(persons.find(per => per.number === body.number)){
-      return response.status(400).json({ 
-        error: 'number must be unique' 
-      })
-    }
+    Person.findOne({ name: person.name })
+    .then(existingPerson => {
+      if (existingPerson) {
+        // Si la persona ya existe, actualizar su número de teléfono
+        existingPerson.number = person.number; // Actualiza el número de teléfono
+        return existingPerson.save(); // Guarda los cambios en la persona existente
+      } else {
+        // Si la persona no existe, crea una nueva entrada
+        return person.save();
+      }
+    })
+    .then(savedPerson => {
+      // Responde con la persona guardada
+      response.json(savedPerson);
+    })
+    .catch(error => next(error));
+   
+  
     
-    const person = {
-      name: body.name,
-      number: body.number ,
-      id: generateId()
-    }
-  
-    persons = persons.concat(person)
-  
-    response.json(persons)
   })
 
 
-  const PORT = process.env.PORT || 3001
-  app.listen(PORT, () => {
+  app.put('/api/persons/:id', (request, response, next) => {
+    const body = request.body
+  
+    const person = {
+      name: body.name,
+      number: body.number 
+    }
+  
+    Person.findByIdAndUpdate(request.params.id, person, { new: true })
+      .then(updatedNote => {
+        response.json(updatedNote)
+      })
+      .catch(error => next(error))
+  })
+  
+  // controlador de solicitudes con endpoint desconocido
+  app.use(unknownEndpoint);
+  app.use(errorHandler);
+
+const PORT = process.env.PORT;
+app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`)
   })
